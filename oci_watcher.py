@@ -52,27 +52,30 @@ def send_heartbeat(state):
     today_str = now_berlin.strftime("%Y-%m-%d")
     
     # Send daily heartbeat between 08:00 and 10:00 Berlin time if not already sent today
-    if 8 <= now_berlin.hour < 10 and state.get("last_heartbeat_date") != today_str:
+    if 8 <= now_berlin.hour < 11 and state.get("last_heartbeat_date") != today_str:
         try:
-            requests.post(
-                f"https://ntfy.sh/{NTFY_TOPIC}",
-                data=f"Bot active. Daily health check passed at {now_berlin.strftime('%H:%M')} CET.".encode("utf-8"),
-                headers={
-                    "Title": "✅ OCI Bot Status: Healthy",
-                    "Priority": "low",
-                    "Tags": "white_check_mark",
-                    "Click": "https://appointment.indianembassyberlin.gov.in"
-                },
-                timeout=10
-            )
+            # Using JSON payload avoids all HTTP header encoding limitations
+            payload = {
+                "topic": NTFY_TOPIC,
+                "title": "OCI Bot Status: Healthy",
+                "message": f"Bot active. Daily health check passed at {now_berlin.strftime('%H:%M')} CET.",
+                "priority": 1,  # low priority
+                "tags": ["white_check_mark"],
+                "click": "https://appointment.indianembassyberlin.gov.in"
+            }
+            response = requests.post("https://ntfy.sh", json=payload, timeout=10)
+            response.raise_for_status()
+            
             state["last_heartbeat_date"] = today_str
-            print(f"[{now_berlin.strftime('%H:%M:%S')}] Daily heartbeat sent.")
+            print(f"[{now_berlin.strftime('%H:%M:%S')}] Daily heartbeat sent successfully.")
         except Exception as e:
             print(f"Failed to send heartbeat: {e}")
 
 def send_slot_alert(slots, is_new=True, screenshot_path="completion_screenshot.png"):
-    title = f"🚨 OCI Slot Found ({len(slots)} available)" if is_new else f"🔔 Reminder: OCI Slots Available ({len(slots)})"
+    title = f"OCI Slot Found ({len(slots)} available)" if is_new else f"Reminder: OCI Slots Available ({len(slots)})"
     message = f"Matching dates: {', '.join(slots)}"
+    
+    # Headers must remain pure ASCII (emojis provided via Tags)
     headers = {
         "Title": title,
         "Priority": "urgent" if is_new else "high",
