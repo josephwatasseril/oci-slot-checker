@@ -1,0 +1,52 @@
+name: Check OCI Appointment Slots
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check-slots:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Python Packages
+        run: pip install -r requirements.txt
+
+      # Cache the Playwright browser binaries
+      - name: Cache Playwright Browsers
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('requirements.txt') }}
+
+      # Only install if cache missed
+      - name: Install Playwright Browsers
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: playwright install --with-deps chromium
+
+      # If cached, ensure runtime dependencies exist without re-downloading
+      - name: Install Playwright System Dependencies
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: playwright install-deps chromium
+
+      - name: Run OCI Checker
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+        run: python oci_watcher.py
+
+      - name: Upload Run Screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: run-screenshots
+          path: "*.png"
+          retention-days: 1
