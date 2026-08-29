@@ -20,7 +20,6 @@ jobs:
       - name: Install Python Packages
         run: pip install -r requirements.txt
 
-      # Cache the Playwright browser binaries
       - name: Cache Playwright Browsers
         id: playwright-cache
         uses: actions/cache@v4
@@ -28,15 +27,22 @@ jobs:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-${{ hashFiles('requirements.txt') }}
 
-      # Only install if cache missed
       - name: Install Playwright Browsers
         if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: playwright install --with-deps chromium
 
-      # If cached, ensure runtime dependencies exist without re-downloading
       - name: Install Playwright System Dependencies
         if: steps.playwright-cache.outputs.cache-hit == 'true'
         run: playwright install-deps chromium
+
+      # Restore and save persistent state cache (.cache/state.json)
+      - name: Restore State Cache
+        uses: actions/cache@v4
+        with:
+          path: .cache
+          key: oci-state-${{ github.run_id }}
+          restore-keys: |
+            oci-state-
 
       - name: Run OCI Checker
         env:
