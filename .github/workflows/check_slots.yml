@@ -3,6 +3,10 @@ name: Check OCI Appointment Slots
 on:
   workflow_dispatch:
 
+concurrency:
+  group: oci-checker
+  cancel-in-progress: true
+
 jobs:
   check-slots:
     runs-on: ubuntu-latest
@@ -35,7 +39,6 @@ jobs:
         if: steps.playwright-cache.outputs.cache-hit == 'true'
         run: playwright install-deps chromium
 
-      # Restore and save persistent state cache (.cache/state.json)
       - name: Restore State Cache
         uses: actions/cache@v4
         with:
@@ -47,6 +50,12 @@ jobs:
       - name: Run OCI Checker
         env:
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          START_DATE: ${{ vars.START_DATE }}
+          CUTOFF_DATE: ${{ vars.CUTOFF_DATE }}
+          EXCLUDED_DATES: ${{ vars.EXCLUDED_DATES }}
+          PREFERRED_SLOT_COUNT: ${{ vars.PREFERRED_SLOT_COUNT }}
+          HEARTBEAT_START_HOUR: ${{ vars.HEARTBEAT_START_HOUR }}
+          HEARTBEAT_END_HOUR: ${{ vars.HEARTBEAT_END_HOUR }}
         run: python oci_watcher.py
 
       - name: Upload Run Screenshots
