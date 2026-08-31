@@ -12,9 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       actions: write
-    container:
-      image: mcr.microsoft.com/playwright/python:v1.62.0-jammy
-
+    
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
