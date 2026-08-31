@@ -10,6 +10,8 @@ concurrency:
 jobs:
   check-slots:
     runs-on: ubuntu-latest
+    permissions:
+      actions: write
 
     steps:
       - name: Checkout Code
@@ -66,3 +68,20 @@ jobs:
           name: run-screenshots
           path: "*.png"
           retention-days: 1
+
+      - name: Prune Caches Older Than 1 Hour
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          # Calculate UTC cutoff epoch (1 hour ago)
+          CUTOFF=$(date -u -d '1 hour ago' +%s)
+
+          # Fetch cache list and parse IDs older than 1 hour matching key 'oci-state-'
+          gh api "/repos/$REPO/actions/caches?per_page=100" \
+            --jq '.actions_caches[] | select(.key | startswith("oci-state-")) | select((.created_at | fromdateiso8601) < '$CUTOFF') | .id' \
+          | while read -r cache_id; do
+            echo "Deleting old cache ID: $cache_id"
+            gh api --method DELETE "/repos/$REPO/actions/caches/$cache_id"
+          done
