@@ -30,6 +30,8 @@ CUTOFF_DATE = get_env_date("CUTOFF_DATE", "2026-10-15")
 EXCLUDED_DATES = get_env_date_set("EXCLUDED_DATES", "2026-09-11,2026-09-14,2026-09-22,2026-09-23")
 PREFERRED_SLOT_COUNT = int(os.getenv("PREFERRED_SLOT_COUNT", "2"))
 
+MAX_RETRIES = int(os.getenv("MAX_RETRIES", "3"))
+
 CACHE_DIR = ".cache"
 STATE_FILE = os.path.join(CACHE_DIR, "state.json")
 COOLDOWN_SECONDS = 1 * 3600
@@ -260,6 +262,58 @@ def scan_calendar_for_slots(page, months_to_scan):
 
     return all_matches
 
+def execute_scrape_cycle(page, months_to_scan):
+    """Executes a single end-to-end check cycle."""
+    # Step 0: Open Site with retry fallback
+    page.goto(
+        "https://appointment.indianembassyberlin.gov.in",
+        timeout=25000,
+        wait_until="domcontentloaded"
+    )
+    
+    # Step 1: Initial Terms
+    if page.locator("#agree").count() > 0 and page.locator("#dropdown").count() == 0:
+        page.check("#agree")
+        page.click("#btnSubmit")
+        page.wait_for_load_state("domcontentloaded")
+        page.wait_for_timeout(600)
+    
+    # Step 2: Jurisdiction (Berlin)
+    if page.locator("#dropdown").count() > 0:
+        page.select_option("#dropdown", label="Berlin")
+        page.evaluate("document.querySelector('#dropdown').dispatchEvent(new Event('change', {bubbles: true}))")
+        page.check("#agree")
+        page.evaluate("document.querySelector('#agree').dispatchEvent(new Event('change', {bubbles: true}))")
+        page.evaluate("document.querySelector('#btnSubmit').removeAttribute('disabled')")
+        page.click("#btnSubmit")
+        page.wait_for_load_state("domcontentloaded")
+        page.wait_for_timeout(800)
+    
+    # Step 3: Main Appointment Form Selection
+    page.wait_for_selector("#category", timeout=15000)
+    page.select_option("#category", "1")
+    page.evaluate("if (typeof refreshDependent === 'function') refreshDependent();")
+    
+    page.wait_for_selector("#service", timeout=15000)
+    page.wait_for_timeout(400)
+    page.select_option("#service", "20")
+    
+    # Step 4: Open Datepicker
+    page.wait_for_selector("#appmnt_date", timeout=15000)
+    page.wait_for_timeout(400)
+    page.evaluate("""() => {
+        if (window.jQuery && window.jQuery('#appmnt_date').length) {
+            window.jQuery('#appmnt_date').datepicker('show');
+        } else {
+            const input = document.getElementById('appmnt_date');
+            if (input) { input.focus(); input.click(); }
+        }
+    }""")
+    page.wait_for_selector("#ui-datepicker-div", state="visible", timeout=10000)
+    
+    # Step 5: Scan Months & Extract Timeslots
+    return scan_calendar_for_slots(page, months_to_scan)
+    
 # --- Main Runner ---
 def run_check():
     state = load_state()
@@ -268,82 +322,52 @@ def run_check():
     print(f"[{datetime.now(BERLIN_TZ).strftime('%Y-%m-%d %H:%M:%S')} CET] Running check for {START_DATE} to {CUTOFF_DATE}...")
     months_to_scan = get_months_to_scan(START_DATE, CUTOFF_DATE)
     
+    all_matches = None
+    screenshot_path = "completion_screenshot.png"
+
     with sync_playwright() as p:
-        browser = p.chromium.launch(
-            headless=True,
-            args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
-        )
-        context = browser.new_context(
-            user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
-            locale="en-GB",
-            timezone_id="Europe/Berlin"
-        )
-        page = context.new_page()
-        page.route("**/*", lambda r: r.abort() if r.request.resource_type in ["image", "media", "font"] else r.continue_())
-        
-        try:
-            page.goto("https://appointment.indianembassyberlin.gov.in", timeout=30000, wait_until="domcontentloaded")
-            
-            # Step 1: Terms
-            if page.locator("#agree").count() > 0 and page.locator("#dropdown").count() == 0:
-                page.check("#agree")
-                page.click("#btnSubmit")
-                page.wait_for_load_state("domcontentloaded")
-                page.wait_for_timeout(600)
-            
-            # Step 2: Jurisdiction (Berlin)
-            if page.locator("#dropdown").count() > 0:
-                page.select_option("#dropdown", label="Berlin")
-                page.evaluate("document.querySelector('#dropdown').dispatchEvent(new Event('change', {bubbles: true}))")
-                page.check("#agree")
-                page.evaluate("document.querySelector('#agree').dispatchEvent(new Event('change', {bubbles: true}))")
-                page.evaluate("document.querySelector('#btnSubmit').removeAttribute('disabled')")
-                page.click("#btnSubmit")
-                page.wait_for_load_state("domcontentloaded")
-                page.wait_for_timeout(800)
-            
-            # Step 3: Main Appointment Form Selection
-            page.wait_for_selector("#category", timeout=15000)
-            page.select_option("#category", "1")
-            page.evaluate("if (typeof refreshDependent === 'function') refreshDependent();")
-            
-            page.wait_for_selector("#service", timeout=15000)
-            page.wait_for_timeout(400)
-            page.select_option("#service", "20")
-            
-            # Step 4: Open Datepicker
-            page.wait_for_selector("#appmnt_date", timeout=15000)
-            page.wait_for_timeout(400)
-            page.evaluate("""() => {
-                if (window.jQuery && window.jQuery('#appmnt_date').length) {
-                    window.jQuery('#appmnt_date').datepicker('show');
-                } else {
-                    const input = document.getElementById('appmnt_date');
-                    if (input) { input.focus(); input.click(); }
-                }
-            }""")
-            page.wait_for_selector("#ui-datepicker-div", state="visible", timeout=10000)
-            
-            # Step 5: Scan Months & Extract Timeslots
-            all_matches = scan_calendar_for_slots(page, months_to_scan)
-            
-            # Step 6: Proof Screenshot
-            screenshot_path = "completion_screenshot.png"
-            page.screenshot(path=screenshot_path, full_page=True)
-            
-            # Step 7: Alert & State Handling
-            handle_alert_deduplication(all_matches, state, screenshot_path)
-            
-        except Exception as err:
-            print(f"Error during execution: {err}")
+        for attempt in range(1, MAX_RETRIES + 1):
+            browser = None
             try:
-                page.screenshot(path="error_screenshot.png", timeout=5000)
-            except Exception:
-                pass
-            sys.exit(1)
-        finally:
-            save_state(state)
-            browser.close()
+                print(f"[{datetime.now(BERLIN_TZ).strftime('%H:%M:%S')}] Attempt {attempt}/{MAX_RETRIES}...")
+                browser = p.chromium.launch(
+                    headless=True,
+                    args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
+                )
+                context = browser.new_context(
+                    user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+                    locale="en-GB",
+                    timezone_id="Europe/Berlin"
+                )
+                page = context.new_page()
+                page.route("**/*", lambda r: r.abort() if r.request.resource_type in ["image", "media", "font"] else r.continue_())
+
+                all_matches = execute_scrape_cycle(page, months_to_scan)
+                page.screenshot(path=screenshot_path, full_page=True)
+                break  # Successful run -> break out of retry loop
+
+            except Exception as err:
+                print(f"⚠️ Attempt {attempt}/{MAX_RETRIES} encountered an issue: {err}")
+                if attempt == MAX_RETRIES:
+                    try:
+                        if 'page' in locals() and page:
+                            page.screenshot(path="error_screenshot.png", timeout=5000)
+                    except Exception:
+                        pass
+                    save_state(state)
+                    sys.exit(1)
+                
+                # Exponential backoff before next attempt
+                backoff_seconds = attempt * 3
+                print(f"Retrying in {backoff_seconds}s with fresh browser context...")
+                time.sleep(backoff_seconds)
+            finally:
+                if browser:
+                    browser.close()
+
+    if all_matches is not None:
+        handle_alert_deduplication(all_matches, state, screenshot_path)
+        save_state(state)
 
 if __name__ == "__main__":
     run_check()
