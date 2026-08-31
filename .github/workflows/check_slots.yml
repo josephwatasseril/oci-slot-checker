@@ -12,34 +12,21 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       actions: write
+    container:
+      image: mcr.microsoft.com/playwright/python:v1.46.0-jammy
 
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Cache Pip Dependencies
+        uses: actions/cache@v4
         with:
-          python-version: '3.11'
-          cache: 'pip'
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
 
       - name: Install Python Packages
         run: pip install -r requirements.txt
-
-      - name: Cache Playwright Browsers
-        id: playwright-cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ hashFiles('requirements.txt') }}
-
-      - name: Install Playwright Browsers
-        if: steps.playwright-cache.outputs.cache-hit != 'true'
-        run: playwright install --with-deps chromium
-
-      - name: Install Playwright System Dependencies
-        if: steps.playwright-cache.outputs.cache-hit == 'true'
-        run: playwright install-deps chromium
 
       - name: Restore State Cache
         uses: actions/cache@v4
