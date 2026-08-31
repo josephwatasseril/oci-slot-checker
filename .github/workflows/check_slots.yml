@@ -67,3 +67,18 @@ jobs:
             echo "Deleting old cache ID: $cache_id"
             gh api --method DELETE "/repos/$REPO/actions/caches/$cache_id"
           done
+
+      - name: Prune Workflow Runs Older Than 1 Day
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          CUTOFF=$(date -u -d '1 day ago' +%s)
+          # Fetch workflow runs older than 1 day and delete them
+          gh api "/repos/$REPO/actions/runs?per_page=100" \
+            --jq '.workflow_runs[] | select(((.created_at[0:19] + "Z") | fromdateiso8601) < '$CUTOFF') | .id' \
+          | while read -r run_id; do
+            echo "Deleting run ID: $run_id"
+            gh api --method DELETE "/repos/$REPO/actions/runs/$run_id"
+          done
