@@ -56,6 +56,7 @@ jobs:
           PREFERRED_SLOT_COUNT: ${{ vars.PREFERRED_SLOT_COUNT }}
           HEARTBEAT_START_HOUR: ${{ vars.HEARTBEAT_START_HOUR }}
           HEARTBEAT_END_HOUR: ${{ vars.HEARTBEAT_END_HOUR }}
+          MAX_RETRIES: ${{ vars.MAX_RETRIES }}
         run: python oci_watcher.py
 
       - name: Upload Run Screenshots
