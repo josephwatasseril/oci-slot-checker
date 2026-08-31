@@ -331,8 +331,14 @@ def run_check():
             try:
                 print(f"[{datetime.now(BERLIN_TZ).strftime('%H:%M:%S')}] Attempt {attempt}/{MAX_RETRIES}...")
                 browser = p.chromium.launch(
+                    channel="chrome",  # Uses GitHub Actions pre-installed Google Chrome
                     headless=True,
-                    args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
+                    args=[
+                        "--no-sandbox",
+                        "--disable-setuid-sandbox",
+                        "--disable-dev-shm-usage",
+                        "--disable-blink-features=AutomationControlled"
+                    ]
                 )
                 context = browser.new_context(
                     user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
