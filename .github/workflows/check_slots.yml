@@ -62,6 +62,15 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
         run: |
+          # 1. Resolve latest version tag from GitHub's release redirect
+          LATEST_TAG=$(basename $(curl -fs -o /dev/null -w %{redirect_url} https://github.com/cli/cli/releases/latest))
+          VERSION="${LATEST_TAG#v}"
+
+          # 2. Download and extract directly into /usr/local (bin/gh -> /usr/local/bin/gh)
+          curl -fsSL "https://github.com/cli/cli/releases/download/${LATEST_TAG}/gh_${VERSION}_linux_amd64.tar.gz" \
+            | tar -xz --strip-components=1 -C /usr/local
+
+          # 3. Prune old cache entries
           CUTOFF=$(date -u -d '1 hour ago' +%s)
           gh api "/repos/$REPO/actions/caches?per_page=100" \
             --jq '.actions_caches[] | select(.key | startswith("oci-state-")) | select(((.created_at[0:19] + "Z") | fromdateiso8601) < '$CUTOFF') | .id' \
